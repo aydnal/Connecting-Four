@@ -1,0 +1,1694 @@
+# Programmer: Avinash Aydnal
+# Project : Connecting 4 !
+
+			.data
+rlines		.asciiz	" ________________________\n\n\n"
+rlines2		.asciiz	"___\n"
+clines		.asciiz	"|"
+uwin		.asciiz	"USER WINS!!"
+cwin		.asciiz	"COMPUTER WINS!!"
+tie			.asciiz	"GRID IS FULL. TIE!! "
+grid		.space	24	# Holds the location of all game pieces 
+					# NOTE: MAKE SURE THAT the "grid" byte array
+					# starts at an address that's a multiple of 4!!
+					# This could prove helpful later on.
+welcome	.asciiz	" WELCOME TO MIPSYM VERSION OF CONNECT-4!"
+againmsg	.asciiz	"PLAY AGAIN (Nonzero=YES, 0=NO)? "
+choose		.asciiz " Select a Column from 1 - 6 : "
+colmns      .asciiz "  6   5   4   3   2   1  "
+invalid			.asciiz " Invalid Column ... Select Again"
+userpiece		.asciiz "O"
+comppiece		.asciiz "X"
+
+tmp1			.asciiz	" check col1\n"
+tmp2			.asciiz	" check col2\n"
+
+fp.ra = 4
+fp.fp = 0
+fp.a0 = 8
+fp.a1 = 12
+fp.a2 = 16
+fp.s0 = -4
+fp.s1 = -8
+fp.s2 = -12
+fp.s3 = -16
+fp.s4 = -20
+fp.s5 = -24
+
+			.globl main
+			.code
+			
+main: 	 	jal resetdisplay			
+			la 	$a0,grid
+			jal 	initialize_grid	
+			jal 	print_game
+			li $a3,1 # counter to select Comp column randomly
+check:		jal 	select_col_user
+			li	$a1,1
+			#$v0 contains the column number
+			jal	drop_piece
+			#jal printarray
+			li $a0,1
+			jal check_win
+			beq $a1,1,user_won
+			jal grid_full
+			bnez $a1,draw_game
+			#li	$a2,1  # set the flag to insert comp piece.
+			#jal printarray
+			li $a1,0
+comp_piece:	jal	select_col_comp
+			#$a0 contains the column number for the comp piece
+			li 	$a1,2
+			jal	drop_piece
+			li 	$a0,2
+			jal check_win
+			beq $a1,1,comp_won
+			jal grid_full
+			bnez $a1,draw_game
+			b check
+draw_game:	li $a0,29
+			li $a1,10
+			syscall $xy
+			la $a0,tie
+			syscall $print_string
+			li $a0,29
+			li $a1,11
+			syscall $xy
+			la $a0,againmsg
+			syscall $print_string
+			syscall	$read_int
+			bnez $v0,main
+			b end_game
+user_won:	li $a0,29
+			li $a1,10
+			syscall $xy
+			la $a0,uwin
+			syscall $print_string
+			li $a0,29
+			li $a1,11
+			syscall $xy
+			la $a0,againmsg
+			syscall $print_string
+			syscall	$read_int
+			bnez $v0,main	
+			b end_game
+comp_won:	li $a0,29
+			li $a1,10
+			syscall $xy
+			la $a0,cwin
+			syscall $print_string
+			li $a0,29
+			li $a1,11
+			syscall $xy
+			la $a0,againmsg
+			syscall $print_string
+			syscall	$read_int
+			bnez $v0,main	
+end_game:	syscall 	$exit
+			
+#############################################################
+# Print Array function: Used to debug the program : to check the pieces inserted in the grid.
+#########################################################
+printarray: li $a0,2
+			li $a1,26
+			syscall	$xy
+			la 		$a0,grid
+            move 	$t1,$a0
+            li 		$t0,24
+loopprint: lb $a0,($t1)
+            syscall $print_int
+			addi $t1,$t1,1
+			addi $t0,$t0,-1
+			bnez $t0,loopprint
+			jr $ra
+###########################################################
+# Function name: Reset display
+#---------------------------------------------------------------------------
+# void resetdisplay(void)
+#
+# inputs: none
+#
+# This function clears the console display by displaying 25 newline 
+# characters onto the console. Be sure to push any
+# "a" and "s"registers onto the stack if your function uses them.
+#---------------------------------------------------------------------------
+# Register usage: <list any t0-t9 registers used by the function>
+###########################################################
+
+resetdisplay:	li 	$a0,0
+				li 	$a1,0
+				syscall	$xy
+				li $t0,50
+loop1:			li $a0,0x000A	#newline
+				syscall $print_char
+				addi $t0,$t0,-1			   			  
+				bnez $t0,loop1
+				jr $ra
+
+###########################################################
+# void initialize_grid(void)
+#
+###########################################################
+# This function clears the contents of the "grid" byte array to all 0's.
+#-----------------------------------------------------------------------------------------------
+# Register usage: <list any t0-t9 registers used by the function>
+###########################################################
+initialize_grid:		addi 	$sp,$sp,-12
+						sw		$fp,0($sp)
+						addi 	$fp,$sp,0
+						sw 		$ra,fp.ra($fp)
+						sw 		$a0,fp.a0($fp)			
+						li 		$t0,0
+						li 		$t1,24
+loopback1:				sb 		$t0,0($a0)
+						addi 	$a0,$a0,1
+						addi	$t1,$t1,-1
+						bnez 	$t1,loopback1            
+						lw 		$ra,fp.ra($fp)
+						lw 		$a0,fp.a0($fp)			
+						lw 		$fp,0($sp)
+						addi 	$sp,$sp,12
+						jr 		$ra
+
+###############################################################################
+# void print_game(void)
+## Description: 
+# This function prints a 4 row-by-6 column grid onto the console. The grid lines
+# are comprised of underscore characters separating the rows, and the vertical
+# bar (ASCII byte 0x7C) separating the columns. Each grid cell has a height of
+# 3 spaces in the vertical direction, and 3 spaces in the horizontal direction.
+# The vertical bars forming the vertical boundaries of cells must be separated 4 spaces 
+# from each one another. The underscore characters forming the horizontal boundaries
+# of the cells must be separated by 3 rows from one another.
+# The contents within each grid cell is determined by the 24-byte "grid" byte array. If
+# a particular element of the "grid" array contains a value of 0, then the corresponding 
+# grid cell is empty, and nothing is visually written into each cell. If an element
+# contains a value of 1, then an "O" is placed in the center of a grid cell. If an 
+# element contains a value of 2, then an "X" is placed in the center of the grid cell.
+# The 1st element of the "grid" array corresponds to the cell at the bottom right corner of the grid.
+# The 2nd element corresponds to the cell above the 1st element, in the right-most
+# column. The 5th element of "grid" array corresponds to the cell at the bottom of the 
+# second right-most column, and so on.
+###############################################################################
+# Register usage: <list any t0-t9 registers used by the function>
+###############################################################################
+
+print_game:		addi 	$sp,$sp,-24         
+				sw 		$fp,16($sp)
+				addi 	$fp,$sp,16
+				sw 		$ra,fp.ra($fp)
+				sw 		$a0,fp.a0($fp)
+				sw 		$a1,fp.a1($fp)
+				sw 		$a2,fp.a2($fp)
+				sw 		$s0,fp.s0($fp)
+				li		$a0,0
+				li 		$a1,4  #row
+				syscall 	$xy
+				la 		$a0,colmns
+				syscall 	$print_string
+			    li 		$a0,0 #col
+				li 		$a1,5  #row
+				syscall 	$xy
+				la 		$a0,rlines
+				syscall	$print_string
+				li		$a0,0
+				li 		$a1,6  #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,0
+				li 		$a1,7 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#3rd Row
+				li		$a0,0
+				li 		$a1,8 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				 li 		$a0,1 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,5 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,9 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,13 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,17 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,21 #col
+				li 		$a1,8	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				#next column
+				li		$a0,0
+				li 		$a1,9 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next column
+				li		$a0,0
+				li 		$a1,10 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next column
+				li		$a0,0
+				li 		$a1,11	#row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Row
+				 li 		$a0,1 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,5 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,9 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,13 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,17 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,21 #col
+				li 		$a1,11	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,12 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,13 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,14 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Row
+				li 		$a0,1 #col
+				li 		$a1,14	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,5 #col
+				li 		$a1,14	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,9 #col
+				li 		$a1,14 #row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,13 #col
+				li 		$a1,14	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,17 #col
+				li 		$a1,14	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,21 #col
+				li 		$a1,14	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,15 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,16 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Column
+				li		$a0,0
+				li 		$a1,17 #row
+				syscall 	$xy
+				la		$a0,clines
+				syscall	$print_string
+				li		$a0,4
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,8 
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,12
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,16
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,20
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				li		$a0,24
+				syscall 	$xy
+				la 		$a0,clines
+				syscall	$print_string
+				#next Row
+				 li 		$a0,1 #col
+				li 		$a1,17	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,5 #col
+				li 		$a1,17	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,9 #col
+				li 		$a1,17 #row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,13 #col
+				li 		$a1,17	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,17 #col
+				li 		$a1,17	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,21 #col
+				li 		$a1,17	#row
+				syscall 	$xy
+				la 		$a0,rlines2
+				syscall	$print_string
+				li 		$a0,26 #col
+				li 		$a1,1	#row
+				syscall 	$xy
+				la		$a0,welcome
+				syscall	$print_string
+				jr 		$ra
+				
+##################################################################
+# int select_col_user(void)
+# output: 
+# v0: column number that the user selects
+##################################################################
+# Description: 
+# This function prompts the user for a column number 1-6. The user types in the
+# number. If the number is not within the range of 1-6, or the selected column 
+# already has all four rows filled with game pieces, the function outputs 
+# "Invalid Column...Select Again!" a couple rows beneath the grid, and prompts
+# the user for another column number. Once a valid column is selected, the column
+# number is stored in register $v0.#
+# The "grid" byte array, which contains 24 bytes, is needed. Each byte
+# contains either a 0, 1, or 2, indicating whether a particular cell in the grid 
+# is empty (0), contains a piece from the user (1), or a piece from the 
+# computer (2). 
+#---------------------------------------------------------------------------
+# Register usage: <list any t0-t9 registers used by the function>
+##################################################################
+
+select_col_user:	li 		$a0,2 #col
+					li 		$a1,20	#row
+					syscall 	$xy
+					#li $a0,0x000A  #newline
+					#syscall $print_char
+					mov	$t5,$a1
+					la		$a0,choose
+					syscall	$print_string
+					syscall	$read_int
+					mov	$t0,$v0
+					li 		$t2,0
+					slt     $t1,$t2,$t0
+					slti		$t3,$t0,7
+					and		$t1,$t3,$t1
+					bnez 	$t1,else1
+print_invalid:		li 		$a0,2 #col
+					li 		$a1,22	#row
+					syscall 	$xy
+					la		$a0,invalid
+					syscall	$print_string
+					#li $a0,0x000A  #newline
+					#syscall $print_char
+					#li 		$a0,2
+					#addi	$t5,$t5,2
+					#mov	$a1,$t5
+					#syscall 	$xy
+					b   select_col_user
+else1:				la 		$a0,grid
+					beq		$t0,1,col1
+					beq		$t0,2,col2
+					beq		$t0,3,col3
+					beq		$t0,4,col4
+					beq		$t0,5,col5
+					beq		$t0,6,col6
+col1:				lb		$t0,3($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+					b	swBreak
+col2:				lb		$t0,7($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+					b	swBreak
+col3:				lb		$t0,11($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+					b	swBreak	
+col4:				lb		$t0,15($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+					b	swBreak	
+col5:				lb		$t0,19($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+					b	swBreak				
+col6:				lb		$t0,23($a0)
+					beqz	$t0,swBreak
+					b		print_invalid
+swBreak:
+					jr		$ra 
+					
+###################################################################
+# int select_col_comp(void)
+#
+# outputs: 
+# v0: column number selected by the computer
+###################################################################
+# Description: 
+# The computer first checks to see if the user already has 3 pieces in a 
+# sequence in any column. If so, the computer places its piece at the top of 
+# the column. After checking all columns, the computer
+# chooses the columns according to the following column sequence: 3, 4, 2, 5, 1, 6.
+# For instance, the computer starts by choosing column 3. If column 3 is already 
+# full, the computer proceeds to choose column 4; if column 4
+# is full, the computer proceeds to choose column 2; if column 2 is full, the 
+# computer proceeds to choose column 5, and so on. The column number that the 
+# computer ultimately selects is stored in register $v0.#
+# The "grid" byte array, which contains 24 bytes, is needed. 
+###################################################################
+# Register usage: <list any t0-t9 registers used by the function>
+###################################################################	
+##
+# Enhanced the function : if 3 users piece are continuous in a row then the computer selects next column in that row:
+# Example  :   X 0 0 0
+#####################################################################				
+					
+select_col_comp:	addi $sp,$sp,-36        
+					sw $fp,4($sp)
+					addi $fp,$sp,4
+					sw $ra,fp.ra($fp)
+				la $a0,grid
+				 jal check_col1
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 jal check_col2
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 jal check_col3
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 jal check_col4
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 jal check_col5
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 jal check_col6
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 
+				 la $s1,grid
+				 li $t8,4 #column
+				 li $t7,3 #counter
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 la $s1,grid
+				 addi $s1,$s1,4
+				 li $t8,5
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 la $s1,grid
+				 addi $s1,$s1,1
+				li $t8,4
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 la $s1,grid
+				 addi $s1,$s1,5
+					li $t8,5
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 la $s1,grid
+				 addi $s1,$s1,2
+					li $t8,4
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 
+				 la $s1,grid
+				 addi $s1,$s1,6
+				li $t8,4
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 
+				 la $s1,grid
+				 addi $s1,$s1,3
+				li $t8,4
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+				 
+				 la $s1,grid
+				 addi $s1,$s1,7
+				li $t8,5
+				 li $t7,3
+				 jal check_row
+				 li $t6,1
+				 beq $t6,$a1,found_col
+ 
+				 
+random_col:		 beq $a3,1,loadcol3
+				 beq $a3,2,loadcol4
+				 beq $a3,3,loadcol2
+				 beq $a3,4,loadcol5
+				 beq $a3,5,loadcol1
+				 beq $a3,6,loadcol6
+				 li $a3,1
+				 b random_col	
+loadcol1:		#la $t1,grid
+				lb $t4,3($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,1
+				addi $a3,$a3,1
+				b found_col
+loadcol2:		#la $t1,grid
+				lb $t4,7($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,2
+				addi $a3,$a3,1
+				b found_col
+loadcol3:		#la $t1,grid
+				lb $t4,11($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,3
+				addi $a3,$a3,1
+				b found_col
+loadcol4:		#la $t1,grid
+				lb $t4,15($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,4
+				addi $a3,$a3,1
+				b found_col
+loadcol5:		#la $t1,grid
+				lb $t4,19($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,5
+				addi $a3,$a3,1
+				b found_col
+loadcol6:		#la $t1,grid
+				lb $t4,23($a0)
+				seq $t2,$t4,$0
+				beqz $t2,incr
+				li $v0,6
+				addi $a3,$a3,1
+				b found_col
+incr:		addi $a3,$a3,1
+			b random_col
+			
+found_col:	lw $ra,fp.ra($fp)
+			addi $sp,$sp,36
+			jr $ra
+				
+check_col1:	lb $t1,0($a0)
+			li $t2,1
+			beq  $t2,$t1,checknext
+			jr	$ra
+checknext:	lb $t1,1($a0)
+			beq $t2,$t1,checknext2
+			jr	$ra
+checknext2:	lb $t1,2($a0)
+			beq	 $t2,$t1,setcolumn
+			jr	$ra
+setcolumn:	li $v0,1
+			li $a1,1
+			jr	$ra
+
+check_col2:		lb $t1,5($a0)
+				li $t2,1
+				beq  $t2,$t1,checknext_col2
+				jr	$ra
+checknext_col2:	lb $t1,6($a0)
+				beq $t2,$t1,checknext1_col2
+				jr	$ra
+checknext1_col2:	lb $t1,7($a0)
+					beq	 $t2,$t1,setcolumn_col2
+					jr	$ra
+setcolumn_col2:	li $v0,2
+				li $a1,1
+				jr	$ra
+
+check_col3:		lb $t1,9($a0)
+				li $t2,1
+				beq  $t2,$t1,checknext_col3
+				jr	$ra
+checknext_col3:	lb $t1,10($a0)
+				beq $t2,$t1,checknext2_col3
+				jr	$ra
+checknext2_col3:	lb $t1,11($a0)
+					beq	 $t2,$t1,setcolumn_col3
+					jr	$ra
+setcolumn_col3:	li $v0,3
+				li $a1,1
+		jr	$ra
+
+check_col4:		lb $t1,12($a0)
+				li $t2,1
+				beq  $t2,$t1,checknext_col4
+				jr	$ra
+checknext_col4:	lb $t1,13($a0)
+				beq $t2,$t1,checknext2_col4
+				jr	$ra
+checknext2_col4:	lb $t1,14($a0)
+					beq	 $t2,$t1,setcolumn_col4
+					jr	$ra
+setcolumn_col4:	li $v0,4
+				li $a1,1
+				jr	$ra
+
+check_col5:		lb $t1,16($a0)
+				li $t2,1
+				beq  $t2,$t1,checknext_col5
+				jr	$ra
+checknext_col5:	lb $t1,17($a0)
+				beq $t2,$t1,checknext2_col5
+				jr	$ra
+checknext2_col5:	lb $t1,18($a0)
+					beq	 $t2,$t1,setcolumn_col5
+					jr	$ra
+setcolumn_col5:	li $v0,5
+				li $a1,1
+				jr	$ra
+
+check_col6:		lb $t1,20($a0)
+				li $t2,1
+				beq  $t2,$t1,checknext_col6
+				jr	$ra
+checknext_col6:	lb $t1,21($a0)
+				beq $t2,$t1,checknext2_col6
+				jr	$ra
+checknext2_col6:	lb $t1,22($a0)
+					beq	 $t2,$t1,setcolumn_col6
+					jr	$ra
+setcolumn_col6:	li $v0,6
+				li $a1,1
+				jr	$ra
+
+				#enhanced the function of sel comp column. 
+check_row:	lb $t1,0($s1)
+				li $t5,1
+				bne $t5,$t1,checknextrow
+				#li $t2,1
+				addi $s1,$s1,4
+				addi $t7,$t7,-1
+				bnez  $t7,check_row
+				addi $s1,$s1,4
+				lb $t1,0($s1)
+				beqz $t1,found_row
+
+found_row: mov $v0,$t7 # $t7 contains the row number  
+				li $a1,1
+checknextrow: jr $ra 
+				
+				
+####################################################################
+# void drop_piece(int col, int user)
+# inputs:
+# v0: column number
+# a1: =0 if user is placing a piece
+# =1 if computer is placing a piece
+####################################################################
+# This function receives as an input the column number (register $a0),
+# and a signal (register $a1) that indicates whether to drop a user's place ("O"), or a 
+# computer's piece ("X"). The piece will be dropped to the lowest unfilled 
+# position in the column. Column 1 corresponds to the right-most column of the 
+# cell grid, while Column 6 corresponds to the left-most column.#
+# The "grid" byte array, which contains 24 bytes, is needed. 
+####################################################################
+# Register usage: <list any t0-t9 registers used by the function>
+####################################################################
+
+drop_piece:			mov	$t0,$v0  #$v0 has the column number
+					la 		$a0,grid
+					beq		$t0,1,store_col1
+					beq		$t0,2,store_col2
+					beq		$t0,3,store_col3
+					beq		$t0,4,store_col4
+					beq		$t0,5,store_col5
+					beq		$t0,6,store_col6
+store_col1:			#mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,0($a0)
+					beqz	$t1,insert1
+					lb $t1,1($a0)
+					beqz	$t1,insert2
+					lb $t1,2($a0)
+					beqz	$t1,insert3
+					lb $t1,3($a0)
+					beqz	$t1,insert4
+					b next
+store_col2:			mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,4($a0)
+					beqz	$t1,insert5
+					lb $t1,5($a0)
+					beqz	$t1,insert6
+					lb $t1,6($a0)
+					beqz	$t1,insert7
+					lb $t1,7($a0)
+					beqz	$t1,insert8
+					b next
+store_col3:			mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,8($a0)
+					beqz	$t1,insert9
+					lb $t1,9($a0)
+					beqz	$t1,insert10
+					lb $t1,10($a0)
+					beqz	$t1,insert11
+					lb $t1,11($a0)
+					beqz	$t1,insert12
+					b next
+store_col4:			mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,12($a0)
+					beqz	$t1,insert13
+					lb $t1,13($a0)
+					beqz	$t1,insert14
+					lb $t1,14($a0)
+					beqz	$t1,insert15
+					lb $t1,15($a0)
+					beqz	$t1,insert16
+					b next
+store_col5:			mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,16($a0)
+					beqz	$t1,insert17
+					lb $t1,17($a0)
+					beqz	$t1,insert18
+					lb $t1,18($a0)
+					beqz	$t1,insert19
+					lb $t1,19($a0)
+					beqz	$t1,insert20
+					b next
+store_col6:			mov $t0,$a0	#t0 Contains the column number
+					la	$a0,grid
+					lb	$t1,20($a0)
+					beqz	$t1,insert21
+					lb $t1,21($a0)
+					beqz	$t1,insert22
+					lb $t1,22($a0)
+					beqz	$t1,insert23
+					lb $t1,23($a0)
+					beqz	$t1,insert24
+					b next
+insert1:			# display on screen here
+					mov $t0,$a1
+					sb $a1,0($a0)
+					li $a0,22
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user1
+					la $a0,comppiece
+					b display1
+user1:				la $a0,userpiece
+display1:			syscall	$print_string
+					b next
+insert2:			mov $t0,$a1
+					sb $a1,1($a0)
+					li $a0,22
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user2
+					la $a0,comppiece
+					b display2
+user2:				la $a0,userpiece
+display2:			syscall	$print_string
+					b next
+insert3:			mov $t0,$a1
+					sb $a1,2($a0)
+					li $a0,22
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user3
+					la $a0,comppiece
+					b display3
+user3:				la $a0,userpiece
+display3:			syscall	$print_string
+					b next
+insert4:			mov $t0,$a1
+					sb $a1,3($a0)
+					li $a0,22
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user4
+					la $a0,comppiece
+					b display4
+user4:				la $a0,userpiece
+display4:			syscall	$print_string
+					b next
+insert5:			mov $t0,$a1
+					sb $a1,4($a0)
+					li $a0,18
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user5
+					la $a0,comppiece
+					b display5
+user5:				la $a0,userpiece
+display5:			syscall	$print_string
+					b next
+insert6:			mov $t0,$a1
+					sb $a1,5($a0)
+					li $a0,18
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user6
+					la $a0,comppiece
+					b display6
+user6:				la $a0,userpiece
+display6:			syscall	$print_string
+					b next
+insert7:			mov $t0,$a1
+					sb $a1,6($a0)
+					li $a0,18
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user7
+					la $a0,comppiece
+					b display7
+user7:				la $a0,userpiece
+display7:			syscall	$print_string
+					b next
+insert8:			mov $t0,$a1
+					sb $a1,7($a0)
+					li $a0,18
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user8
+					la $a0,comppiece
+					b display8
+user8:				la $a0,userpiece
+display8:			syscall	$print_string
+					b next
+insert9:			mov $t0,$a1
+					sb $a1,8($a0)
+					li $a0,14
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user8
+					la $a0,comppiece
+					b display9
+user9:				la $a0,userpiece
+display9:			syscall	$print_string
+					b next
+insert10:			mov $t0,$a1
+					sb $a1,9($a0)
+					li $a0,14
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user10
+					la $a0,comppiece
+					b display10
+user10:				la $a0,userpiece
+display10:			syscall	$print_string
+					b next
+insert11:			mov $t0,$a1
+					sb $a1,10($a0)
+					li $a0,14
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user11
+					la $a0,comppiece
+					b display11
+user11:				la $a0,userpiece
+display11:			syscall	$print_string
+					b next
+insert12:			mov $t0,$a1
+					sb $a1,11($a0)
+					li $a0,14
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user12
+					la $a0,comppiece
+					b display12
+user12:				la $a0,userpiece
+display12:			syscall	$print_string
+					b next
+insert13:			mov $t0,$a1
+					sb $a1,12($a0)
+					li $a0,10
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user13
+					la $a0,comppiece
+					b display13
+user13:			la $a0,userpiece
+display13:			syscall	$print_string
+					b next
+insert14:			mov $t0,$a1
+					sb $a1,13($a0)
+					li $a0,10
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user14
+					la $a0,comppiece
+					b display14
+user14:			la $a0,userpiece
+display14:			syscall	$print_string
+					b next
+insert15:			mov $t0,$a1
+					sb $a1,14($a0)
+					li $a0,10
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user15
+					la $a0,comppiece
+					b display15
+user15:			la $a0,userpiece
+display15:			syscall	$print_string
+					b next
+insert16:			mov $t0,$a1
+					sb $a1,15($a0)
+					li $a0,10
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user16
+					la $a0,comppiece
+					b display16
+user16:			la $a0,userpiece
+display16:			syscall	$print_string
+					b next
+insert17:			mov $t0,$a1
+					sb $a1,16($a0)
+					li $a0,6
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user17
+					la $a0,comppiece
+					b display17
+user17:			la $a0,userpiece
+display17:			syscall	$print_string
+					b next
+insert18:			mov $t0,$a1
+					sb $a1,17($a0)
+					li $a0,6
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user18
+					la $a0,comppiece
+					b display18
+user18:			la $a0,userpiece
+display18:			syscall	$print_string
+					b next
+insert19:			mov $t0,$a1
+					sb $a1,18($a0)
+					li $a0,6
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user19
+					la $a0,comppiece
+					b display19
+user19:			la $a0,userpiece
+display19:			syscall	$print_string
+					b next
+insert20:			mov $t0,$a1
+					sb $a1,19($a0)
+					li $a0,6
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user20
+					la $a0,comppiece
+					b display20
+user20:			la $a0,userpiece
+display20:			syscall	$print_string
+					b next
+insert21:			mov $t0,$a1
+					sb $a1,20($a0)
+					li $a0,2
+					li $a1,16
+					syscall $xy
+					beq $t0,1,user21
+					la $a0,comppiece
+					b display21
+user21:			la $a0,userpiece
+display21:			syscall	$print_string
+					b next
+insert22:			mov $t0,$a1
+					sb $a1,21($a0)
+					li $a0,2
+					li $a1,13
+					syscall $xy
+					beq $t0,1,user22
+					la $a0,comppiece
+					b display22
+user22:			la $a0,userpiece
+display22:			syscall	$print_string
+					b next
+insert23:			mov $t0,$a1
+					sb $a1,22($a0)
+					li $a0,2
+					li $a1,10
+					syscall $xy
+					beq $t0,1,user23
+					la $a0,comppiece
+					b display23
+user23:				la $a0,userpiece
+display23:			syscall	$print_string
+					b next
+insert24:			mov $t0,$a1
+					sb $a1,23($a0)
+					li $a0,2
+					li $a1,7
+					syscall $xy
+					beq $t0,1,user24
+					la $a0,comppiece
+					b display24
+user24:				la $a0,userpiece
+display24:			syscall	$print_string
+					b next
+next:				jr	$ra 
+				
+##############################################################
+# int grid_full(void)
+# output:
+# v0: =0 if grid is NOT full
+# =1 if grid is full.
+##############################################################
+# This function checks to see if the "grid" byte array still has elements
+# containing values of 0, which are the empty spaces.
+# If empty spaces remain, the function returns a 0; otherwise
+# the function returns a 1.
+#-----------------------------------------------------------------------------------------------
+# Register usage: <list any t0-t9 registers used by the function>
+##############################################################
+
+grid_full:	la $a0,grid
+			lb $t0,3($a0)
+			beqz $t0,notfull
+			lb  $t0,7($a0)
+			beqz $t0,notfull
+			lb  $t0,11($a0)
+			beqz $t0,notfull
+			lb  $t0,15($a0)
+			beqz $t0,notfull
+			lb  $t0,19($a0)
+			beqz $t0,notfull
+			lb  $t0,23($a0)
+			beqz $t0,notfull
+			li $a1,1 # grid is full
+			b ret_grid
+notfull:	li $a1,0 #grid is not full 
+ret_grid:	jr $ra
+
+################################################################
+# int check_win(int a0)
+# input:
+# a0: =0 if check user
+# =1 if check computer
+# output:
+# v0: =0 if user has NOT won
+# =1 if user has won
+################################################################
+# This function checks to see if the user or computer has won the game. A user wins 
+# if 4 of his/her pieces are connected either vertically, horizontally, or diagonally.
+# A computer win occurs if 4 of its pieces are connected either
+# vertically, horizontally, or diagonally. 
+# Hint: When checking for diagonal pieces, DO NOT use a loop.
+#
+# The a0 input specifies whether the functions checks if the user won (a0=0), or
+# if the computer won (a0=1). When checking to see if the user won, the function 
+# checks for the “O” pieces. Otherwise, the function checks for the “X” pieces. The 
+# function returns a 1 if a win is detected, and a 0 if no win has been detected. 
+# The function needs the "grid" byte array.
+#-----------------------------------------------------------------------------------------------
+# Register usage: <list any t0-t9 registers used by the function>
+################################################################
+
+check_win: 	#addi 	$sp,$sp,-36        
+			#sw 		$fp,4($sp)
+			#addi 	$fp,$sp,4
+			#sw 		$ra,fp.ra($fp)
+			mov 	$t0,$a0
+			la 		$a0,grid
+			li 		$t1,4
+			li 		$s0,0
+win_loop1:	lb 		$s0,0($a0)
+			bne 	$s0,$t0,nb_1
+			addi  $a0,$a0,1
+			#syscall	$print_int 	# temp
+			#mov 	
+			#lb 		$s0,0($a0)
+			addi 	$t1,$t1,-1
+			bnez	 $t1,win_loop1
+			b ret_won
+nb_1:		li 		$t1,4
+			la 		$a0,grid
+			addi 	$a0,$a0,4
+win_loop2:	lb 		$s0,0($a0)
+			bne 	$s0,$t0,nb_2
+			addi  $a0,$a0,1
+			#syscall $print_int # delete later
+			addi $t1,$t1,-1
+			bnez	 $t1,win_loop2
+			b ret_won
+nb_2:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,8
+win_loop3: lb 		$s0,0($a0)
+			bne 	$s0,$t0,nb_3
+			addi  $a0,$a0,1
+			lb 		$s0,0($a0)
+			addi $t1,$t1,-1
+			bnez	 $t1,win_loop3
+			b ret_won
+nb_3:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,12
+win_loop4:	lb 		$s0,0($a0)
+			bne 	$s0,$t0,nb_4
+			addi  $a0,$a0,1
+			addi $t1,$t1,-1
+			bnez	 $t1,win_loop4
+			b ret_won
+nb_4:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,16
+win_loop5:	lb 		$s0,0($a0)
+				bne 	$s0,$t0,nb_5
+				addi  $a0,$a0,1
+				addi $t1,$t1,-1
+			bnez	 $t1,win_loop5
+			b ret_won
+nb_5:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,20
+win_loop6:	lb 		$s0,0($a0)
+				bne 	$s0,$t0,nb_6	
+				addi  $a0,$a0,1
+				addi $t1,$t1,-1
+			bnez	 $t1,win_loop6
+			b ret_won
+nb_6:		li 		$t1,4 	
+			la 		$a0,grid
+hoz_loop1: lb $s0,0($a0)
+			bne 	$s0,$t0,nb_7
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop1
+			b ret_won
+nb_7:		li 		$t1,4 			
+			la 		$a0,grid
+			addi 	$a0,$a0,4
+hoz_loop2:		lb $s0,0($a0)
+				bne 	$s0,$t0,nb_8
+				addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop2
+			b ret_won
+nb_8:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,8
+hoz_loop3: lb $s0,0($a0)
+				bne 	$s0,$t0,nb_9
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop3
+			b ret_won
+nb_9:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,1
+hoz_loop4:	lb $s0,0($a0)
+				bne 	$s0,$t0,nb_10
+				addi  $a0,$a0,4
+				addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop4
+			b ret_won
+nb_10:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,5
+hoz_loop5:		lb $s0,0($a0)
+				bne 	$s0,$t0,nb_11
+				addi  $a0,$a0,4
+				addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop5
+			b ret_won
+nb_11:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,9
+hoz_loop6:		lb $s0,0($a0)
+			bne 	$s0,$t0,nb_12
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop6
+			b ret_won
+nb_12:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,2
+hoz_loop7:	lb $s0,0($a0)
+				bne 	$s0,$t0,nb_13
+				addi  $a0,$a0,4
+			lb 		$s0,0($a0)
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop7
+			b ret_won
+nb_13:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,6
+hoz_loop8:	lb $s0,0($a0)
+				bne 	$s0,$t0,nb_14
+				addi  $a0,$a0,4
+			lb 		$s0,0($a0)
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop8
+			b ret_won
+nb_14:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,10
+hoz_loop9:	lb $s0,0($a0)
+				bne 	$s0,$t0,nb_15
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop9
+			b ret_won
+nb_15:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,3
+hoz_loop10:	lb $s0,0($a0)
+			bne 	$s0,$t0,nb_16
+				addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop10
+			b ret_won
+nb_16:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,7
+hoz_loop11:	lb $s0,0($a0)
+			bne 	$s0,$t0,nb_17
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop11
+			b ret_won
+nb_17:		li	$t1,4
+			la 		$a0,grid
+			addi 	$a0,$a0,11
+hoz_loop12:	lb $s0,0($a0)
+			bne 	$s0,$t0,nb_18
+			addi  $a0,$a0,4
+			addi $t1,$t1,-1
+			bnez	 $t1,hoz_loop12
+			b ret_won
+nb_18:		li 		$t1,4
+			la 		$a0,grid
+dgnl_loop13: 	lb $s0,0($a0)
+				bne 	$s0,$t0,nb_19
+				addi  $a0,$a0,5
+			addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop13
+			b ret_won
+nb_19:		li 		$t1,4 
+			la 		$a0,grid
+			addi 	$a0,$a0,4
+dgnl_loop14:		lb $s0,0($a0)
+			bne 	$s0,$t0,nb_20
+				addi  $a0,$a0,5
+				addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop14
+			b ret_won
+nb_20:		li 		$t1,4 
+			la 		$a0,grid
+			addi $a0,$a0,8
+dgnl_loop15:  lb $s0,0($a0)
+				bne 	$s0,$t0,nb_21
+				addi  $a0,$a0,5
+			addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop15
+			b ret_won
+nb_21:		li 		$t1,4 
+			la 		$a0,grid
+			addi $a0,$a0,3
+dgnl_loop16:	 lb $s0,0($a0)
+				bne 	$s0,$t0,nb_22
+				addi  $a0,$a0,3
+				addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop16
+			b ret_won
+nb_22:		li 		$t1,4 
+			la 		$a0,grid
+dgnl_loop17: 	lb $s0,7($a0)
+				bne 	$s0,$t0,nb_23
+				addi  $a0,$a0,3
+				addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop17
+			b ret_won
+nb_23:		li 		$t1,4 
+			la 		$a0,grid
+			addi  $a0,$a0,11
+dgnl_loop18: 	lb $s0,0($a0)
+			bne 	$s0,$t0,nb_24
+				addi  $a0,$a0,3
+				addi $t1,$t1,-1
+			bnez	 $t1,dgnl_loop18
+			b ret_won
+nb_24:		li $a1,0	# set to 0 if no win
+			jr $ra			
+ret_won:	li $a1,1 	# set to 1 is somebody wins
+			mov $a0,$t0
+			jr $ra
+			
+			
